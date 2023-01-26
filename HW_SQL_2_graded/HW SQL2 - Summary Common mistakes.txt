@@ -1,0 +1,122 @@
+Ex1:
+--3
+-- Để điều kiện join các bảng ở where, mà lại thiếu ngoặc -> lọc sai các dòng
+SELECT S."Snum",S."Name"
+FROM "Student" S,"Enrolled" E,"Class" Cl, "FacultyMember" F
+WHERE Cl."Room" = 'D9-205'
+OR (F."Name" = 'Prof. Nguyen'
+	AND F."Dept" = 'Computer Science'
+)
+AND F."Fid" = Cl."Fid"
+AND Cl."Name" = E."ClassName"
+AND E."Snum"  = s."Snum";
+
+-- Nen dung IN thay vi '=' vì subquery có thể trả về 1 list nhiều giá trị
+select snum, name
+from Student s
+where Snum = (
+	select e.snum
+    from Enrolled e, Class c, FacultyMember f 
+    where e.classname = c.name
+    and (c.room = 'D9-205' or (c.fid=f.fid and f.name='Prof. Nguyen' and f.dept='Computer Science'))
+)
+
+-- 5
+-- ver1: Kết quả sai do điều kiện tìm các lớp trùng thời gian bị thiếu
+select s.Snum, s.Name , e1.ClassName, e2.ClassName
+from Class c1
+join Class c2 on (c1.StartTime <= c2.StartTime and c2.StartTime <= c1.EndTime -- Điều kiện dòng này bị thiếu
+		and c1.Weekday = c2.Weekday and c1.Semester = c2.Semester
+		and c1.Name != c2.Name)
+join Enrolled e1 on e1.ClassName = c1.Name
+join Enrolled e2 on e2.ClassName = c2.Name
+join Student s on s.Snum = e1.Snum
+where e1.Snum = e2.Snum
+-- ver2: Đã sửa 
+select s.Snum, s.Name, c1.Name, c2.Name
+from Class c1
+join Class c2 on (((c1.StartTime <= c2.StartTime 	-- Sửa lại bằng cách bổ sung điều kiện
+                  and c2.StartTime <= c1.EndTime) or 	--
+                   (c2.StartTime <= c1.StartTime 	--
+                  and c1.StartTime <= c2.EndTime))	--
+                  and c1.Weekday = c2.Weekday and c1.Semester = c2.Semester
+                  and c1.Name < c2.Name)
+join Enrolled e1 on e1.ClassName = c1.Name
+join Enrolled e2 on e2.ClassName = c2.Name
+join Student s on s.Snum = e1.Snum
+where e1.Snum = e2.Snum
+
+-- 6
+-- Điều kiện weekday IN (2,3,4,5,6,7) chưa đủ để kiểm tra liệu giảng viên đó có làm đủ tất cả các ngày trong tuần ko
+SELECT fid, name
+FROM FacultyMember 
+WHERE fid IN (
+	SELECT f.fid
+	FROM FacultyMember f JOIN class c ON f.fid = c.fid
+	WHERE c.Semester = '20221' AND c.WeekDay IN (2,3,4,5,6,7)
+	GROUP BY f.fid
+);
+
+-- 8
+-- Group By được sử dụng chưa đúng cách -> Các cột muốn được select thì phải nằm trong GROUP BY
+SELECT f.fid, f.name, COUNT(DISTINCT c.Name) AS "Number of classes"
+FROM FacultyMember f JOIN Class c ON f.fid = c.fid
+WHERE f.fid IN(
+	SELECT f1.fid
+	FROM FacultyMember f1 JOIN Class c1 ON f1.fid = c1.fid
+	GROUP BY c1.Semester
+	HAVING COUNT(DISTINCT c1.Name) > 4
+)
+GROUP BY c.semester;
+
+
+-- 9
+-- Limit chỉ hiển thị đúng 1 dòng, trong khi đề bài yêu cầu tìm CÁC học sinh, như vậy câu lệnh có thể cho kết quả bị thiếu
+SELECT s.Snum, s.Name, COUNT(e.ClassName) AS NoClassEnrolled
+FROM Student s LEFT JOIN Enrolled e ON s.Snum = e.Snum
+GROUP BY s.Snum, s.Name
+ORDER BY COUNT(e.ClassName) ASC
+LIMIT 1;
+
+-- 10
+-- Query này trả về lớp đã đăng ký tương ứng với từng học sinh, nên nếu học sinh nào đó tham gia nhiều lớp, 
+-- trong đó có lớp của dept = 'CS' thì query sẽ ko loại được trường hợp này
+SELECT DISTINCT s.Snum, s.Name
+FROM Student s JOIN Enrolled e ON s.Snum = e.Snum
+				JOIN Class c ON e.ClassName = c.Name
+				JOIN FacultyMember f ON c.Fid = f.Fid
+WHERE f.Dept != 'Computer Science';
+
+SELECT distinct s.Snum, s.Name
+FROM Student s, (Enrolled JOIN Class ON Enrolled.ClassName = Class.Name) AS e
+WHERE s.Snum = e.Snum 
+	AND e.Fid NOT IN (SELECT f.Fid FROM FacultyMember f WHERE Dept = 'Computer Science');
+
+-- Natural join sẽ lấy TẤT CẢ các cột có tên giống nhau giữa 2 bảng để làm điều kiện join.
+-- Trường hợp này vì f(fid, name, dept) và c(name,...,fid) có chung 2 cột là fid và dept, 
+-- trong khi ý tưởng là chỉ muốn join bằng fid thôi, nên kết quả trả về bị sai
+SELECT s.name
+FROM student s
+WHERE s.snum NOT IN
+(SELECT e.snum
+	FROM facultymember f NATURAL JOIN class c
+ 	NATURAL JOIN enrolled e
+	WHERE f.dept='Computer Science');
+
+
+Ex2:
+-- Muốn select cả cột của bàng và hàm thì trong query phải có group by
+SELECT director.*, COUNT(id)
+FROM director WHERE id IN (
+	SELECT did 
+	FROM movie_director 
+	GROUP BY did)
+ORDER BY COUNT(id) DESC;
+
+-- Câu query này lỗi ko chạy được vì select ko đúng thứ tự (where phải được đặt ở trước Group by mới đúng)
+SELECT * FROM director
+WHERE id IN (
+	SELECT did FROM movie_director 
+	GROUP BY did 
+	HAVING COUNT(did)>3 
+	WHERE mid IN (SELECT id FROM movie WHERE year=2021));
